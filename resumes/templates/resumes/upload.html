@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Resumes{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h4 class="card-title mb-3">Upload resumes for AI analysis</h4>
+                <p class="text-muted small">You can select several files at once (up to 50 files, each under 10MB).</p>
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <button type="submit" class="btn btn-primary">Analyze resumes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

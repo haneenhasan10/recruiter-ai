@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% load resumes_extras %}
+
+{% block title %}Candidates{% endblock %}
+{% block container_class %}container-fluid px-4{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Candidates ({{ candidates|length }})</h4>
+
+    <div class="d-flex gap-2">
+        <button type="submit" form="bulk-delete-form" class="btn btn-outline-danger btn-sm"
+                onclick="return confirm('Delete all selected candidates? This cannot be undone.');">
+            Delete Selected
+        </button>
+
+        <div class="position-relative">
+            <button class="btn btn-outline-secondary btn-sm" type="button" id="columns-toggle">
+                Columns
+            </button>
+            <div id="columns-panel" class="card shadow-sm p-2 d-none"
+                 style="position: absolute; right: 0; z-index: 1000; min-width: 240px;">
+                {% for col in toggleable_columns %}
+                <div class="form-check ps-4">
+                    <input class="form-check-input column-toggle" type="checkbox"
+                           data-col="{{ col.key }}" id="col-{{ col.key }}"
+                           {% if col.default_visible %}checked{% endif %}>
+                    <label class="form-check-label" for="col-{{ col.key }}">{{ col.label }}</label>
+                </div>
+                {% endfor %}
+                <hr class="my-2">
+                <button type="button" id="reset-columns" class="btn btn-sm btn-link p-0 text-start">Reset to defaults</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if showing_batch %}
+<div class="alert alert-info d-flex justify-content-between align-items-center">
+    <span>Showing candidates from your last upload.</span>
+    <a href="{% url 'resumes:candidate_list' %}" class="btn btn-sm btn-outline-primary">View all candidates</a>
+</div>
+{% endif %}
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <input type="text" name="q" value="{{ query }}" class="form-control"
+               placeholder="Search by name, email, job title or skill">
+    </div>
+    <div class="col-md-3">
+        <select name="status" class="form-select">
+            <option value="">All statuses</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if value == selected_status %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <input type="number" name="min_experience" value="{{ min_experience }}" min="0" class="form-control"
+               placeholder="Min. years of experience">
+    </div>
+    <div class="col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary flex-fill">Filter</button>
+        <a href="{% url 'resumes:candidate_list' %}" class="btn btn-outline-secondary">Clear</a>
+    </div>
+</form>
+
+{% if candidates %}
+<form id="bulk-delete-form" method="post" action="{% url 'resumes:candidate_bulk_delete' %}">
+    {% csrf_token %}
+    <div class="table-responsive">
+        <table class="table table-hover table-bordered table-sm bg-white align-middle" style="white-space: nowrap;">
+            <thead class="table-dark">
+                <tr>
+                    <th style="width: 32px;"><input type="checkbox" id="select-all-checkbox"></th>
+                    <th data-col="name">Name</th>
+                    <th data-col="contact">Contact</th>
+                    <th data-col="job_title">Current Job Title</th>
+                    <th data-col="summary">Professional Summary</th>
+                    <th data-col="education">Education</th>
+                    <th data-col="experience">Experience</th>
+                    <th data-col="experiences">Work History</th>
+                    <th data-col="projects">Projects</th>
+                    <th data-col="skills">Skills</th>
+                    <th data-col="languages">Languages</th>
+                    <th data-col="certifications">Certifications</th>
+                    <th data-col="ai_summary">AI Assessment</th>
+                    <th data-col="status">Status</th>
+                    <th data-col="uploaded">Uploaded</th>
+                    <th data-col="file">File</th>
+                    <th style="width: 40px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for candidate in candidates %}
+                <tr>
+                    <td><input type="checkbox" name="candidate_ids" value="{{ candidate.pk }}" class="row-checkbox"></td>
+                    <td data-col="name">
+                        <a href="{% url 'resumes:candidate_detail' candidate.pk %}">
+                            {{ candidate.full_name|default:"Unnamed" }}
+                        </a>
+                    </td>
+                    <td data-col="contact" style="white-space: normal; min-width: 200px;">
+                        {% if candidate.email %}<div>{{ candidate.email }}</div>{% endif %}
+                        {% if candidate.phone %}<div>{{ candidate.phone }}</div>{% endif %}
+                        {% if candidate.location %}<div>{{ candidate.location }}</div>{% endif %}
+                        {% if candidate.linkedin_url %}<div><a href="{{ candidate.linkedin_url }}" target="_blank">LinkedIn</a></div>{% endif %}
+                        {% if candidate.github_url %}<div><a href="{{ candidate.github_url }}" target="_blank">GitHub</a></div>{% endif %}
+                        {% if not candidate.email and not candidate.phone and not candidate.location and not candidate.linkedin_url and not candidate.github_url %}-{% endif %}
+                    </td>
+                    <td data-col="job_title">{{ candidate.current_job_title|default:"-" }}</td>
+                    <td data-col="summary" style="white-space: normal; min-width: 200px;">{{ candidate.professional_summary|default:"-"|truncatewords:20 }}</td>
+                    <td data-col="education" style="white-space: normal; min-width: 200px;">
+                        {% if candidate.highest_degree %}<div>{{ candidate.highest_degree }}</div>{% endif %}
+                        {% if candidate.field_of_study %}<div>{{ candidate.field_of_study }}</div>{% endif %}
+                        {% if candidate.university %}<div>{{ candidate.university }}</div>{% endif %}
+                        {% if candidate.graduation_year %}<div>Graduated {{ candidate.graduation_year }}</div>{% endif %}
+                        {% if candidate.gpa %}<div>GPA {{ candidate.gpa }}</div>{% endif %}
+                        {% if not candidate.highest_degree and not candidate.field_of_study and not candidate.university and not candidate.graduation_year and not candidate.gpa %}-{% endif %}
+                    </td>
+                    <td data-col="experience">{{ candidate.experience_display|default:"-" }}</td>
+                    <td data-col="experiences" style="white-space: normal; min-width: 220px;">{{ candidate.experiences|experience_summary }}</td>
+                    <td data-col="projects" style="white-space: normal; min-width: 180px;">{{ candidate.projects|project_summary }}</td>
+                    <td data-col="skills" style="white-space: normal; min-width: 180px;">{{ candidate.skills|join_list }}</td>
+                    <td data-col="languages">{{ candidate.languages|join_list }}</td>
+                    <td data-col="certifications" style="white-space: normal; min-width: 160px;">{{ candidate.certifications|join_list }}</td>
+                    <td data-col="ai_summary" style="white-space: normal; min-width: 220px;">{{ candidate.candidate_summary|default:"-"|truncatewords:20 }}</td>
+                    <td data-col="status"><span class="badge {{ candidate.status|status_badge_class }}">{{ candidate.get_status_display }}</span></td>
+                    <td data-col="uploaded">{{ candidate.created_at|date:"Y-m-d H:i" }}</td>
+                    <td data-col="file"><a href="{% url 'resumes:candidate_resume' candidate.pk %}">Download</a></td>
+                    <td class="text-center">
+                        <button type="submit" formaction="{% url 'resumes:candidate_delete' candidate.pk %}"
+                                formnovalidate class="btn btn-sm btn-outline-danger" title="Delete candidate"
+                                onclick="return confirm('Delete this candidate? This cannot be undone.');">
+                            &times;
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</form>
+{% else %}
+<p class="text-muted">No candidates match these filters. <a href="{% url 'resumes:upload' %}">Upload a resume</a>.</p>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var STORAGE_KEY = 'candidateListColumns';
+    var checkboxes = document.querySelectorAll('.column-toggle');
+
+    // Plain show/hide panel (not Bootstrap's dropdown component). It only
+    // opens/closes via the "Columns" button - checking or unchecking any
+    // column never closes it, so columns can always be toggled back on.
+    var panel = document.getElementById('columns-panel');
+    var toggleButton = document.getElementById('columns-toggle');
+
+    toggleButton.addEventListener('click', function () {
+        panel.classList.toggle('d-none');
+    });
+
+    function readSaved() {
+        try {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY));
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function applyVisibility(col, visible) {
+        document.querySelectorAll('[data-col="' + col + '"]').forEach(function (el) {
+            el.classList.toggle('d-none', !visible);
+        });
+    }
+
+    function saveState() {
+        var state = {};
+        checkboxes.forEach(function (cb) { state[cb.dataset.col] = cb.checked; });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function applyAll(saved) {
+        checkboxes.forEach(function (checkbox) {
+            var col = checkbox.dataset.col;
+            var visible = saved && Object.prototype.hasOwnProperty.call(saved, col)
+                ? saved[col]
+                : checkbox.dataset.default === "true";
+            checkbox.checked = visible;
+            applyVisibility(col, visible);
+        });
+    }
+
+    checkboxes.forEach(function (checkbox) {
+        checkbox.dataset.default = checkbox.checked ? "true" : "false";
+        checkbox.addEventListener('change', function () {
+            applyVisibility(checkbox.dataset.col, checkbox.checked);
+            saveState();
+        });
+    });
+
+    applyAll(readSaved());
+
+    document.getElementById('reset-columns').addEventListener('click', function () {
+        localStorage.removeItem(STORAGE_KEY);
+        applyAll(null);
+    });
+
+    var selectAll = document.getElementById('select-all-checkbox');
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            document.querySelectorAll('.row-checkbox').forEach(function (cb) {
+                cb.checked = selectAll.checked;
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

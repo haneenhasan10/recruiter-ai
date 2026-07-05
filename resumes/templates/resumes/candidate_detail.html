@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% load resumes_extras %}
+
+{% block title %}{{ candidate.full_name|default:"Candidate" }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h3>{{ candidate.full_name|default:"Unnamed candidate" }}</h3>
+        <p class="text-muted mb-0">{{ candidate.current_job_title|default:"" }}</p>
+    </div>
+    <div class="text-end">
+        <span class="badge {{ candidate.status|status_badge_class }} fs-6 mb-2 d-inline-block">{{ candidate.get_status_display }}</span>
+        <form method="post" class="d-flex gap-2">
+            {% csrf_token %}
+            <select name="status" class="form-select form-select-sm">
+                {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if value == candidate.status %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-sm btn-primary">Update</button>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Contact Information</h5>
+                <ul class="list-unstyled mb-0">
+                    <li><strong>Email:</strong> {{ candidate.email|default:"-" }}</li>
+                    <li><strong>Phone:</strong> {{ candidate.phone|default:"-" }}</li>
+                    <li><strong>Location:</strong> {{ candidate.location|default:"-" }}</li>
+                    <li><strong>LinkedIn:</strong>
+                        {% if candidate.linkedin_url %}<a href="{{ candidate.linkedin_url }}" target="_blank">{{ candidate.linkedin_url }}</a>{% else %}-{% endif %}
+                    </li>
+                    <li><strong>GitHub:</strong>
+                        {% if candidate.github_url %}<a href="{{ candidate.github_url }}" target="_blank">{{ candidate.github_url }}</a>{% else %}-{% endif %}
+                    </li>
+                    <li><strong>Original file:</strong> <a href="{% url 'resumes:candidate_resume' candidate.pk %}">Download</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Education</h5>
+                <ul class="list-unstyled mb-0">
+                    <li><strong>Degree:</strong> {{ candidate.highest_degree|default:"-" }}</li>
+                    <li><strong>Field of study:</strong> {{ candidate.field_of_study|default:"-" }}</li>
+                    <li><strong>University:</strong> {{ candidate.university|default:"-" }}</li>
+                    <li><strong>Graduation year:</strong> {{ candidate.graduation_year|default:"-" }}</li>
+                    <li><strong>GPA:</strong> {{ candidate.gpa|default:"-" }}</li>
+                    <li><strong>Total experience:</strong> {{ candidate.experience_display|default:"-" }}</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    {% if candidate.candidate_summary %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">AI Assessment</h5>
+                <p class="card-text mb-0">{{ candidate.candidate_summary }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Work Experience</h5>
+                {% if candidate.experiences %}
+                    {% for exp in candidate.experiences %}
+                    <div class="mb-3 {% if not forloop.last %}border-bottom pb-3{% endif %}">
+                        <strong>{{ exp.job_title }}</strong> - {{ exp.company_name }}
+                        <div class="text-muted small">{{ exp.start_date }} — {{ exp.end_date }}</div>
+                        {% if exp.description %}<p class="mb-0 mt-1">{{ exp.description }}</p>{% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted mb-0">No experience recorded.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Skills</h5>
+                {% for skill in candidate.skills %}
+                    <span class="badge bg-primary me-1 mb-1">{{ skill }}</span>
+                {% empty %}
+                    <p class="text-muted mb-0">-</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Languages</h5>
+                {% for lang in candidate.languages %}
+                    <span class="badge bg-info text-dark me-1 mb-1">{{ lang }}</span>
+                {% empty %}
+                    <p class="text-muted mb-0">-</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Certifications</h5>
+                {% for cert in candidate.certifications %}
+                    <span class="badge bg-success me-1 mb-1">{{ cert }}</span>
+                {% empty %}
+                    <p class="text-muted mb-0">-</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
