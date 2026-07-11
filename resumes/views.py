@@ -37,7 +37,12 @@ def upload_resume(request):
 
         if form.is_valid():
             files = form.cleaned_data["resume_files"]
-            analyzer = ResumeAnalyzer(provider="gemini")
+
+            try:
+                analyzer = ResumeAnalyzer(provider="gemini")
+            except ResumeAnalysisError as exc:
+                messages.error(request, f"Could not start the AI analyzer: {exc}")
+                return redirect("resumes:upload")
 
             created_ids = []
             failures = []
