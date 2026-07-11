@@ -1,4 +1,6 @@
 import hashlib
+import tempfile
+from pathlib import Path
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -59,20 +61,26 @@ def upload_resume(request):
                     )
                     continue
 
+                # Analyze from a temp file first - only create the Candidate
+                # row once analysis succeeds, so an interrupted request (e.g.
+                # a slow batch hitting the server timeout) never leaves a
+                # half-empty "Unnamed" record behind.
+                suffix = Path(file.name).suffix
+                with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
+                    for chunk in file.chunks():
+                        tmp.write(chunk)
+                    tmp.flush()
+                    file.seek(0)
+
+                    try:
+                        extracted_data = analyzer.analyze(tmp.name)
+                    except ResumeAnalysisError as exc:
+                        failures.append(f"{file.name}: {exc}")
+                        continue
+
                 candidate = Candidate.objects.create(
-                    resume_file=file, file_hash=file_hash
+                    resume_file=file, file_hash=file_hash, **extracted_data
                 )
-
-                try:
-                    extracted_data = analyzer.analyze(candidate.resume_file.path)
-                except ResumeAnalysisError as exc:
-                    candidate.delete()
-                    failures.append(f"{file.name}: {exc}")
-                    continue
-
-                for field_name, value in extracted_data.items():
-                    setattr(candidate, field_name, value)
-                candidate.save()
                 created_ids.append(candidate.pk)
 
             if created_ids:
