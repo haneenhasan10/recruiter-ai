@@ -11,4 +11,5 @@ urlpatterns = [
     path("candidates/<int:pk>/resume/", views.candidate_resume, name="candidate_resume"),
     path("candidates/<int:pk>/delete/", views.candidate_delete, name="candidate_delete"),
     path("candidates/bulk-delete/", views.candidate_bulk_delete, name="candidate_bulk_delete"),
+    path("careers/apply/", views.public_submit_resume, name="public_submit"),
 ]

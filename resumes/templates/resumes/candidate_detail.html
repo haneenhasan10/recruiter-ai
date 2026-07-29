@@ -8,6 +8,7 @@
     <div>
         <h3>{{ candidate.full_name|default:"Unnamed candidate" }}</h3>
         <p class="text-muted mb-0">{{ candidate.current_job_title|default:"" }}</p>
+        <p class="text-muted small mb-0">Source: {{ candidate.get_source_display }}</p>
     </div>
     <div class="text-end">
         <span class="badge {{ candidate.status|status_badge_class }} fs-6 mb-2 d-inline-block">{{ candidate.get_status_display }}</span>

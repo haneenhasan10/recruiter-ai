@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}{% if success %}Application Received{% else %}Submission Failed{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-body text-center py-5">
+                {% if success %}
+                    <h4 class="mb-3" style="color: var(--olive-700);">Application Received</h4>
+                {% else %}
+                    <h4 class="mb-3 text-danger">Submission Failed</h4>
+                {% endif %}
+                <p class="mb-0">{{ message }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

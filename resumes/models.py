@@ -8,6 +8,10 @@ class Candidate(models.Model):
         REJECTED = "rejected", "Rejected"
         HIRED = "hired", "Hired"
 
+    class Source(models.TextChoices):
+        INTERNAL = "internal", "HR Upload"
+        PUBLIC = "public", "Careers Page"
+
     # The original uploaded file, kept so an HR user can open it later
     resume_file = models.FileField(upload_to="resumes/%Y/%m/")
     # SHA-256 of the file content, used to block re-uploading the same file
@@ -44,6 +48,9 @@ class Candidate(models.Model):
     # HR workflow
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.NEW
+    )
+    source = models.CharField(
+        max_length=20, choices=Source.choices, default=Source.INTERNAL
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

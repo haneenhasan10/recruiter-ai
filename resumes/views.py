@@ -4,11 +4,14 @@ from pathlib import Path
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 
-from .forms import ResumeUploadForm
+from .forms import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE_MB, ResumeUploadForm
 from .models import Candidate
 from .services import ResumeAnalysisError, ResumeAnalyzer
 
@@ -27,9 +30,42 @@ TOGGLEABLE_COLUMNS = [
     {"key": "certifications", "label": "Certifications", "default_visible": False},
     {"key": "ai_summary", "label": "AI Assessment", "default_visible": False},
     {"key": "status", "label": "Status", "default_visible": True},
+    {"key": "source", "label": "Source", "default_visible": False},
     {"key": "uploaded", "label": "Uploaded", "default_visible": True},
     {"key": "file", "label": "File", "default_visible": False},
 ]
+
+
+def _process_upload(file, analyzer, source=Candidate.Source.INTERNAL):
+    """Analyze one uploaded file and create a Candidate if it succeeds.
+
+    Returns (candidate_or_none, error_message_or_none). No Candidate row is
+    created unless analysis actually succeeds, and duplicate file content is
+    rejected before any AI call is made.
+    """
+    file_hash = hashlib.sha256(file.read()).hexdigest()
+    file.seek(0)
+
+    duplicate = Candidate.objects.filter(file_hash=file_hash).first()
+    if duplicate:
+        return None, f"duplicate of already-uploaded '{duplicate.full_name or duplicate.pk}'"
+
+    suffix = Path(file.name).suffix
+    with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
+        for chunk in file.chunks():
+            tmp.write(chunk)
+        tmp.flush()
+        file.seek(0)
+
+        try:
+            extracted_data = analyzer.analyze(tmp.name)
+        except ResumeAnalysisError as exc:
+            return None, str(exc)
+
+    candidate = Candidate.objects.create(
+        resume_file=file, file_hash=file_hash, source=source, **extracted_data
+    )
+    return candidate, None
 
 
 @login_required
@@ -50,38 +86,11 @@ def upload_resume(request):
             failures = []
 
             for file in files:
-                file_hash = hashlib.sha256(file.read()).hexdigest()
-                file.seek(0)
-
-                duplicate = Candidate.objects.filter(file_hash=file_hash).first()
-                if duplicate:
-                    failures.append(
-                        f"{file.name}: duplicate of already-uploaded "
-                        f"'{duplicate.full_name or duplicate.pk}' - skipped"
-                    )
-                    continue
-
-                # Analyze from a temp file first - only create the Candidate
-                # row once analysis succeeds, so an interrupted request (e.g.
-                # a slow batch hitting the server timeout) never leaves a
-                # half-empty "Unnamed" record behind.
-                suffix = Path(file.name).suffix
-                with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
-                    for chunk in file.chunks():
-                        tmp.write(chunk)
-                    tmp.flush()
-                    file.seek(0)
-
-                    try:
-                        extracted_data = analyzer.analyze(tmp.name)
-                    except ResumeAnalysisError as exc:
-                        failures.append(f"{file.name}: {exc}")
-                        continue
-
-                candidate = Candidate.objects.create(
-                    resume_file=file, file_hash=file_hash, **extracted_data
-                )
-                created_ids.append(candidate.pk)
+                candidate, error = _process_upload(file, analyzer)
+                if candidate:
+                    created_ids.append(candidate.pk)
+                else:
+                    failures.append(f"{file.name}: {error}")
 
             if created_ids:
                 messages.success(
@@ -98,6 +107,92 @@ def upload_resume(request):
         form = ResumeUploadForm()
 
     return render(request, "resumes/upload.html", {"form": form})
+
+
+PUBLIC_RATE_LIMIT_MAX = 5
+PUBLIC_RATE_LIMIT_WINDOW_SECONDS = 3600
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def public_submit_resume(request):
+    """Public, login-free endpoint a company careers page can POST a resume to."""
+    if request.method == "GET":
+        return render(request, "resumes/public_apply.html")
+
+    client_ip = request.META.get("REMOTE_ADDR", "unknown")
+    cache_key = f"public_submit:{client_ip}"
+    attempts = cache.get(cache_key, 0)
+    if attempts >= PUBLIC_RATE_LIMIT_MAX:
+        return render(
+            request,
+            "resumes/public_submit_result.html",
+            {"success": False, "message": "Too many submissions. Please try again later."},
+        )
+    cache.set(cache_key, attempts + 1, PUBLIC_RATE_LIMIT_WINDOW_SECONDS)
+
+    uploaded_file = request.FILES.get("resume_file")
+    if not uploaded_file:
+        return render(
+            request,
+            "resumes/public_submit_result.html",
+            {"success": False, "message": "No file was received. Please attach your resume."},
+        )
+
+    extension = Path(uploaded_file.name).suffix.lower()
+    if extension not in ALLOWED_EXTENSIONS:
+        return render(
+            request,
+            "resumes/public_submit_result.html",
+            {
+                "success": False,
+                "message": "Unsupported file type. Please upload a PDF, Word (.docx), PNG, or JPG file.",
+            },
+        )
+
+    if uploaded_file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+        return render(
+            request,
+            "resumes/public_submit_result.html",
+            {"success": False, "message": f"File too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB."},
+        )
+
+    try:
+        analyzer = ResumeAnalyzer(provider="gemini")
+    except ResumeAnalysisError:
+        return render(
+            request,
+            "resumes/public_submit_result.html",
+            {"success": False, "message": "We're unable to process applications right now. Please try again later."},
+        )
+
+    candidate, error = _process_upload(
+        uploaded_file, analyzer, source=Candidate.Source.PUBLIC
+    )
+
+    if candidate is None and error and "duplicate" in error:
+        # Already have this exact file - treat as a friendly success, not an error.
+        return render(
+            request,
+            "resumes/public_submit_result.html",
+            {"success": True, "message": "We already have your application on file. Thank you!"},
+        )
+
+    if candidate is None:
+        return render(
+            request,
+            "resumes/public_submit_result.html",
+            {
+                "success": False,
+                "message": "We couldn't process your file. Please make sure it's a valid, readable PDF, Word document, or image and try again.",
+            },
+        )
+
+    return render(
+        request,
+        "resumes/public_submit_result.html",
+        {"success": True, "message": "Thank you! Your application has been received."},
+    )
 
 
 @login_required

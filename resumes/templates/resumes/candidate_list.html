@@ -86,6 +86,7 @@
                     <th data-col="certifications">Certifications</th>
                     <th data-col="ai_summary">AI Assessment</th>
                     <th data-col="status">Status</th>
+                    <th data-col="source">Source</th>
                     <th data-col="uploaded">Uploaded</th>
                     <th data-col="file">File</th>
                     <th style="width: 40px;"></th>
@@ -126,6 +127,7 @@
                     <td data-col="certifications" style="white-space: normal; min-width: 160px;">{{ candidate.certifications|join_list }}</td>
                     <td data-col="ai_summary" style="white-space: normal; min-width: 220px;">{{ candidate.candidate_summary|default:"-"|truncatewords:20 }}</td>
                     <td data-col="status"><span class="badge {{ candidate.status|status_badge_class }}">{{ candidate.get_status_display }}</span></td>
+                    <td data-col="source">{{ candidate.get_source_display }}</td>
                     <td data-col="uploaded">{{ candidate.created_at|date:"Y-m-d H:i" }}</td>
                     <td data-col="file"><a href="{% url 'resumes:candidate_resume' candidate.pk %}">Download</a></td>
                     <td class="text-center">

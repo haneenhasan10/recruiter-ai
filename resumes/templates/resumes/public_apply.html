@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Apply Now{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h4 class="card-title mb-3">Submit Your Resume</h4>
+                <p class="text-muted small">Upload your resume (PDF, Word, PNG, or JPG - max 10MB) and we'll be in touch.</p>
+                <form method="post" enctype="multipart/form-data" action="{% url 'resumes:public_submit' %}">
+                    <div class="mb-3">
+                        <input type="file" name="resume_file" class="form-control"
+                               accept=".pdf,.docx,.png,.jpg,.jpeg" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Submit Application</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
