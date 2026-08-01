@@ -75,3 +75,40 @@ class Candidate(models.Model):
         if months or not years:
             parts.append(f"{months} mo{'s' if months != 1 else ''}")
         return " ".join(parts)
+
+
+class JobDescription(models.Model):
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class Match(models.Model):
+    job = models.ForeignKey(
+        JobDescription, on_delete=models.CASCADE, related_name="matches"
+    )
+    candidate = models.ForeignKey(
+        Candidate, on_delete=models.CASCADE, related_name="matches"
+    )
+    score = models.IntegerField()
+    explanation = models.TextField()
+    computed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-score"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["job", "candidate"], name="unique_job_candidate_match"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.candidate} vs {self.job} = {self.score}%"

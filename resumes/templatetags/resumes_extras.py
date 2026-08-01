@@ -43,3 +43,15 @@ STATUS_BADGE_CLASSES = {
 def status_badge_class(status):
     """CSS class for a candidate's status badge (see style.css)."""
     return STATUS_BADGE_CLASSES.get(status, "badge-status-new")
+
+
+@register.filter
+def score_badge_class(score):
+    """CSS class for a match score badge - green/gold/muted by threshold."""
+    if score is None:
+        return "badge-status-new"
+    if score >= 75:
+        return "badge-status-hired"
+    if score >= 50:
+        return "badge-status-shortlisted"
+    return "badge-status-rejected"

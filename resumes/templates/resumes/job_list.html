@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Job Descriptions ({{ jobs|length }})</h4>
+    <a href="{% url 'resumes:job_create' %}" class="btn btn-primary btn-sm">+ New Job</a>
+</div>
+
+{% if jobs %}
+<div class="row g-3">
+    {% for job in jobs %}
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <a href="{% url 'resumes:job_detail' job.pk %}">{{ job.title }}</a>
+                </h5>
+                <p class="card-text text-muted small">{{ job.description|truncatewords:25 }}</p>
+                <p class="text-muted small mb-0">{{ job.matches.count }} candidate(s) matched</p>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="text-muted">No jobs yet. <a href="{% url 'resumes:job_create' %}">Create one</a> to start matching candidates.</p>
+{% endif %}
+{% endblock %}

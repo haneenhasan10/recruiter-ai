@@ -18,6 +18,7 @@
                 {% if user.is_authenticated %}
                     <a class="nav-link" href="{% url 'resumes:upload' %}">Upload Resumes</a>
                     <a class="nav-link" href="{% url 'resumes:candidate_list' %}">Candidates</a>
+                    <a class="nav-link" href="{% url 'resumes:job_list' %}">Jobs</a>
                     <span class="nav-link text-white-50">{{ user.username }}</span>
                     <form method="post" action="{% url 'logout' %}" class="d-inline m-0">
                         {% csrf_token %}

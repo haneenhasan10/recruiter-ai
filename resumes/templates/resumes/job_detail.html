@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load resumes_extras %}
+
+{% block title %}{{ job.title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h3>{{ job.title }}</h3>
+        <p class="text-muted small mb-0">Created {{ job.created_at|date:"Y-m-d" }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <form method="post" action="{% url 'resumes:job_run_matching' job.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary btn-sm">
+                Match Candidates
+            </button>
+        </form>
+        <form method="post" action="{% url 'resumes:job_delete' job.pk %}"
+              onsubmit="return confirm('Delete this job and all its match results?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Job Description</h5>
+        <p class="card-text" style="white-space: pre-wrap;">{{ job.description }}</p>
+    </div>
+</div>
+
+<h5 class="mb-3">Matched Candidates ({{ matches|length }})</h5>
+
+{% if matches %}
+<div class="table-responsive">
+    <table class="table table-hover table-bordered table-sm bg-white align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th style="width: 90px;">Score</th>
+                <th>Candidate</th>
+                <th>Explanation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for match in matches %}
+            <tr>
+                <td><span class="badge {{ match.score|score_badge_class }}">{{ match.score }}%</span></td>
+                <td>
+                    <a href="{% url 'resumes:candidate_detail' match.candidate.pk %}">
+                        {{ match.candidate.full_name|default:"Unnamed" }}
+                    </a>
+                </td>
+                <td>{{ match.explanation }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-muted">No matches yet. Click "Match Candidates" to score every candidate in the system against this job.</p>
+{% endif %}
+{% endblock %}

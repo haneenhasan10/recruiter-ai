@@ -109,6 +109,34 @@ FIELD INSTRUCTIONS:
 """.strip()
 
 
+MATCH_PROMPT_TEMPLATE = """
+You are an HR assistant. Evaluate how well this candidate matches the job below,
+using ONLY the information given - do not assume or invent anything not stated.
+
+JOB TITLE: {job_title}
+
+JOB DESCRIPTION:
+{job_description}
+
+CANDIDATE PROFILE:
+- Name: {name}
+- Current title: {current_title}
+- Total experience: {experience}
+- Education: {education}
+- Skills: {skills}
+- Certifications: {certifications}
+- Work history: {work_history}
+
+Return ONLY valid JSON in this exact format, no markdown, no extra text:
+{{
+    "score": integer from 0 to 100 representing overall fit for this specific job,
+    "explanation": "2-3 sentence factual explanation covering the candidate's key
+        strengths relevant to this role AND any notable gaps or missing
+        requirements. Be neutral and professional, never harsh or dismissive."
+}}
+""".strip()
+
+
 # ==============================================================================
 # LLM ABSTRACTION LAYER
 # ==============================================================================
@@ -123,6 +151,12 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     def analyze_text(self, text: str) -> dict[str, Any]:
         """Analyze resume text and return extracted data."""
+
+    @abstractmethod
+    def match_candidate(
+        self, job_title: str, job_description: str, candidate_profile: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Score how well a candidate profile fits a job description."""
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -197,6 +231,49 @@ class GeminiProvider(BaseLLMProvider):
             raise ResumeAnalysisError("Empty response from Gemini API.")
 
         return self._parse_response(response.text)
+
+    def match_candidate(
+        self, job_title: str, job_description: str, candidate_profile: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Score how well a candidate profile fits a job description."""
+        prompt = MATCH_PROMPT_TEMPLATE.format(
+            job_title=job_title,
+            job_description=job_description,
+            name=candidate_profile.get("name") or "Unknown",
+            current_title=candidate_profile.get("current_title") or "-",
+            experience=candidate_profile.get("experience") or "-",
+            education=candidate_profile.get("education") or "-",
+            skills=candidate_profile.get("skills") or "-",
+            certifications=candidate_profile.get("certifications") or "-",
+            work_history=candidate_profile.get("work_history") or "-",
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=[prompt],
+                config=self.types.GenerateContentConfig(
+                    temperature=0,
+                    response_mime_type="application/json",
+                ),
+            )
+        except Exception as exc:
+            raise ResumeAnalysisError(f"Gemini API request failed: {exc}") from exc
+
+        if not response.text:
+            raise ResumeAnalysisError("Empty response from Gemini API.")
+
+        result = self._parse_response(response.text)
+
+        try:
+            score = max(0, min(100, int(result.get("score", 0))))
+        except (TypeError, ValueError):
+            score = 0
+
+        return {
+            "score": score,
+            "explanation": str(result.get("explanation") or "").strip(),
+        }
 
 
 def get_llm_provider(provider_name: str = "gemini") -> BaseLLMProvider:
@@ -489,3 +566,33 @@ class ResumeAnalyzer:
             raise ResumeAnalysisError(f"Unsupported file type: {suffix}")
 
         return normalize_extracted_data(raw_data)
+
+
+def build_candidate_profile(candidate) -> dict[str, Any]:
+    """Condense a Candidate row into the text fields match_candidate() needs."""
+    education_parts = [
+        part
+        for part in [
+            candidate.highest_degree,
+            candidate.field_of_study,
+            candidate.university,
+            f"GPA {candidate.gpa}" if candidate.gpa else None,
+        ]
+        if part
+    ]
+
+    work_history_parts = [
+        f"{exp.get('job_title', '')} at {exp.get('company_name', '')} "
+        f"({exp.get('start_date', '')} - {exp.get('end_date', '')})"
+        for exp in candidate.experiences
+    ]
+
+    return {
+        "name": candidate.full_name,
+        "current_title": candidate.current_job_title,
+        "experience": candidate.experience_display,
+        "education": ", ".join(education_parts),
+        "skills": ", ".join(candidate.skills),
+        "certifications": ", ".join(candidate.certifications),
+        "work_history": " | ".join(work_history_parts),
+    }

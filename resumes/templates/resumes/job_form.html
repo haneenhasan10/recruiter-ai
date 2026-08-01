@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}New Job{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h4 class="card-title mb-3">New Job Description</h4>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label" for="title">Job Title</label>
+                        <input type="text" name="title" id="title" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="description">Job Description</label>
+                        <textarea name="description" id="description" class="form-control" rows="8"
+                                  placeholder="Paste the full job description, including responsibilities and requirements..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Create Job</button>
+                    <a href="{% url 'resumes:job_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

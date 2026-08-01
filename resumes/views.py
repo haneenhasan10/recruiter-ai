@@ -12,8 +12,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .forms import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE_MB, ResumeUploadForm
-from .models import Candidate
-from .services import ResumeAnalysisError, ResumeAnalyzer
+from .models import Candidate, JobDescription, Match
+from .services import ResumeAnalysisError, ResumeAnalyzer, build_candidate_profile
 
 # Columns the user can show/hide on the candidate table. "Name" itself is
 # always shown and isn't included here - see candidate_list.html.
@@ -293,3 +293,83 @@ def candidate_bulk_delete(request):
         candidates.delete()
         messages.success(request, f"Deleted {count} candidate(s).")
     return redirect("resumes:candidate_list")
+
+
+@login_required
+def job_list(request):
+    jobs = JobDescription.objects.all()
+    return render(request, "resumes/job_list.html", {"jobs": jobs})
+
+
+@login_required
+def job_create(request):
+    if request.method == "POST":
+        title = request.POST.get("title", "").strip()
+        description = request.POST.get("description", "").strip()
+        if not title or not description:
+            messages.error(request, "Both title and description are required.")
+        else:
+            job = JobDescription.objects.create(title=title, description=description)
+            messages.success(request, f"Job '{job.title}' created.")
+            return redirect("resumes:job_detail", pk=job.pk)
+    return render(request, "resumes/job_form.html")
+
+
+@login_required
+def job_detail(request, pk):
+    job = get_object_or_404(JobDescription, pk=pk)
+    matches = job.matches.select_related("candidate").order_by("-score")
+    return render(request, "resumes/job_detail.html", {"job": job, "matches": matches})
+
+
+@login_required
+def job_run_matching(request, pk):
+    job = get_object_or_404(JobDescription, pk=pk)
+
+    if request.method == "POST":
+        try:
+            analyzer = ResumeAnalyzer(provider="gemini")
+        except ResumeAnalysisError as exc:
+            messages.error(request, f"Could not start the AI analyzer: {exc}")
+            return redirect("resumes:job_detail", pk=job.pk)
+
+        matched_count = 0
+        failed_count = 0
+
+        for candidate in Candidate.objects.all():
+            profile = build_candidate_profile(candidate)
+            try:
+                result = analyzer.llm.match_candidate(
+                    job.title, job.description, profile
+                )
+            except ResumeAnalysisError:
+                failed_count += 1
+                continue
+
+            Match.objects.update_or_create(
+                job=job,
+                candidate=candidate,
+                defaults={
+                    "score": result["score"],
+                    "explanation": result["explanation"],
+                },
+            )
+            matched_count += 1
+
+        messages.success(
+            request, f"Matched {matched_count} candidate(s) against '{job.title}'."
+        )
+        if failed_count:
+            messages.error(request, f"{failed_count} candidate(s) could not be matched.")
+
+    return redirect("resumes:job_detail", pk=job.pk)
+
+
+@login_required
+def job_delete(request, pk):
+    job = get_object_or_404(JobDescription, pk=pk)
+    if request.method == "POST":
+        title = job.title
+        job.delete()
+        messages.success(request, f"Deleted job '{title}'.")
+    return redirect("resumes:job_list")
