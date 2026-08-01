@@ -8,14 +8,141 @@
         <div class="card shadow-sm">
             <div class="card-body">
                 <h4 class="card-title mb-3">Upload resumes for AI analysis</h4>
-                <p class="text-muted small">You can select several files at once (up to 50 files, each under 10MB).</p>
-                <form method="post" enctype="multipart/form-data">
+                <p class="text-muted small">
+                    Select as many files as you need (each under 10MB). Large batches are
+                    automatically uploaded in small groups with live progress below, so one
+                    huge selection never times out.
+                </p>
+                <form id="upload-form" method="post" enctype="multipart/form-data">
                     {% csrf_token %}
                     {{ form.as_p }}
-                    <button type="submit" class="btn btn-primary">Analyze resumes</button>
+                    <button type="submit" id="submit-btn" class="btn btn-primary">Analyze resumes</button>
                 </form>
+
+                <div id="progress-area" class="mt-4 d-none">
+                    <div id="progress-text" class="small text-muted mb-1">Starting...</div>
+                    <div class="progress" style="height: 18px;">
+                        <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                    </div>
+                    <div id="progress-result" class="mt-3"></div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var CHUNK_SIZE = 20;
+    var form = document.getElementById('upload-form');
+    var fileInput = form.querySelector('input[type="file"]');
+    var submitBtn = document.getElementById('submit-btn');
+    var progressArea = document.getElementById('progress-area');
+    var progressBar = document.getElementById('progress-bar');
+    var progressText = document.getElementById('progress-text');
+    var progressResult = document.getElementById('progress-result');
+
+    function getCsrfToken() {
+        var match = document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)');
+        return match ? match.pop() : '';
+    }
+
+    form.addEventListener('submit', function (e) {
+        var files = fileInput.files;
+
+        // Small selections don't need chunking - let the normal form submit happen.
+        if (!files || files.length <= CHUNK_SIZE) {
+            return;
+        }
+
+        e.preventDefault();
+        submitBtn.disabled = true;
+        progressArea.classList.remove('d-none');
+        progressResult.innerHTML = '';
+
+        var total = files.length;
+        var processed = 0;
+        var allCreatedIds = [];
+        var allFailures = [];
+        var csrftoken = getCsrfToken();
+
+        function updateProgress() {
+            var pct = Math.round((processed / total) * 100);
+            progressBar.style.width = pct + '%';
+            progressText.textContent = 'Processed ' + processed + ' of ' + total + '...';
+        }
+
+        function finish() {
+            progressText.textContent =
+                'Done - ' + allCreatedIds.length + ' analyzed, ' + allFailures.length + ' failed, out of ' + total + '.';
+
+            if (allCreatedIds.length) {
+                var link = document.createElement('a');
+                link.href = '{% url "resumes:candidate_list" %}?batch=' + allCreatedIds.join(',');
+                link.className = 'btn btn-primary mt-2 me-2';
+                link.textContent = 'View uploaded candidates';
+                progressResult.appendChild(link);
+            }
+
+            if (allFailures.length) {
+                var details = document.createElement('details');
+                details.className = 'mt-3 small text-muted';
+                var summary = document.createElement('summary');
+                summary.textContent = allFailures.length + ' failure(s) - click to view';
+                details.appendChild(summary);
+                var ul = document.createElement('ul');
+                allFailures.forEach(function (msg) {
+                    var li = document.createElement('li');
+                    li.textContent = msg;
+                    ul.appendChild(li);
+                });
+                details.appendChild(ul);
+                progressResult.appendChild(details);
+            }
+
+            submitBtn.disabled = false;
+        }
+
+        function submitChunk(startIndex) {
+            if (startIndex >= total) {
+                finish();
+                return;
+            }
+
+            var chunkFiles = Array.prototype.slice.call(files, startIndex, startIndex + CHUNK_SIZE);
+            var formData = new FormData();
+            chunkFiles.forEach(function (f) {
+                formData.append('resume_files', f);
+            });
+
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrftoken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: formData,
+            })
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    processed += chunkFiles.length;
+                    if (data.created_ids) { allCreatedIds = allCreatedIds.concat(data.created_ids); }
+                    if (data.failures) { allFailures = allFailures.concat(data.failures); }
+                    if (data.error) { allFailures.push(data.error); }
+                    updateProgress();
+                    submitChunk(startIndex + CHUNK_SIZE);
+                })
+                .catch(function (err) {
+                    processed += chunkFiles.length;
+                    allFailures.push('Network error on a batch of ' + chunkFiles.length + ' file(s): ' + err);
+                    updateProgress();
+                    submitChunk(startIndex + CHUNK_SIZE);
+                });
+        }
+
+        updateProgress();
+        submitChunk(0);
+    });
+});
+</script>
 {% endblock %}

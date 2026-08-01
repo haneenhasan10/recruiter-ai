@@ -5,7 +5,7 @@ from pathlib import Path
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
-from django.http import FileResponse
+from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
@@ -70,6 +70,13 @@ def _process_upload(file, analyzer, source=Candidate.Source.INTERNAL):
 
 @login_required
 def upload_resume(request):
+    # The upload page auto-splits large selections into small chunks and
+    # posts each one here via fetch() - see resumes/upload.html. Those
+    # requests carry this header and get a small JSON reply instead of a
+    # full page redirect, so no single HTTP request ever has to process
+    # more than a couple dozen resumes (and risk hitting the server timeout).
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
     if request.method == "POST":
         form = ResumeUploadForm(request.POST, request.FILES)
 
@@ -79,6 +86,11 @@ def upload_resume(request):
             try:
                 analyzer = ResumeAnalyzer(provider="gemini")
             except ResumeAnalysisError as exc:
+                if is_ajax:
+                    return JsonResponse(
+                        {"error": f"Could not start the AI analyzer: {exc}"},
+                        status=400,
+                    )
                 messages.error(request, f"Could not start the AI analyzer: {exc}")
                 return redirect("resumes:upload")
 
@@ -92,6 +104,9 @@ def upload_resume(request):
                 else:
                     failures.append(f"{file.name}: {error}")
 
+            if is_ajax:
+                return JsonResponse({"created_ids": created_ids, "failures": failures})
+
             if created_ids:
                 messages.success(
                     request, f"Successfully analyzed {len(created_ids)} resume(s)."
@@ -103,6 +118,10 @@ def upload_resume(request):
                 ids_param = ",".join(str(pk) for pk in created_ids)
                 return redirect(f"{reverse('resumes:candidate_list')}?batch={ids_param}")
             return redirect("resumes:upload")
+
+        if is_ajax:
+            errors = form.errors.get("resume_files") or ["Invalid upload."]
+            return JsonResponse({"error": "; ".join(errors)}, status=400)
     else:
         form = ResumeUploadForm()
 
