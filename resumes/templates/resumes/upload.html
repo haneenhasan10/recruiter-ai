@@ -10,8 +10,8 @@
                 <h4 class="card-title mb-3">Upload resumes for AI analysis</h4>
                 <p class="text-muted small">
                     Select as many files as you need (each under 10MB). Large batches are
-                    automatically uploaded in small groups with live progress below, so one
-                    huge selection never times out.
+                    automatically uploaded in small groups, several at once, with live
+                    progress below, so one huge selection never times out.
                 </p>
                 <form id="upload-form" method="post" enctype="multipart/form-data">
                     {% csrf_token %}
@@ -34,6 +34,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var CHUNK_SIZE = 20;
+    var CONCURRENCY = 3; // how many chunks are in flight to the server at once
     var form = document.getElementById('upload-form');
     var fileInput = form.querySelector('input[type="file"]');
     var submitBtn = document.getElementById('submit-btn');
@@ -103,13 +104,29 @@ document.addEventListener('DOMContentLoaded', function () {
             submitBtn.disabled = false;
         }
 
-        function submitChunk(startIndex) {
-            if (startIndex >= total) {
-                finish();
+        // Split into chunks up front, then keep up to CONCURRENCY requests
+        // in flight at once - as soon as one finishes, the next queued
+        // chunk is launched immediately instead of waiting for its turn.
+        var chunks = [];
+        for (var i = 0; i < total; i += CHUNK_SIZE) {
+            chunks.push(Array.prototype.slice.call(files, i, i + CHUNK_SIZE));
+        }
+
+        var nextChunkIndex = 0;
+        var chunksInFlight = 0;
+
+        function launchNext() {
+            if (nextChunkIndex >= chunks.length) {
+                if (chunksInFlight === 0) {
+                    finish();
+                }
                 return;
             }
 
-            var chunkFiles = Array.prototype.slice.call(files, startIndex, startIndex + CHUNK_SIZE);
+            var chunkFiles = chunks[nextChunkIndex];
+            nextChunkIndex++;
+            chunksInFlight++;
+
             var formData = new FormData();
             chunkFiles.forEach(function (f) {
                 formData.append('resume_files', f);
@@ -129,19 +146,22 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (data.created_ids) { allCreatedIds = allCreatedIds.concat(data.created_ids); }
                     if (data.failures) { allFailures = allFailures.concat(data.failures); }
                     if (data.error) { allFailures.push(data.error); }
-                    updateProgress();
-                    submitChunk(startIndex + CHUNK_SIZE);
                 })
                 .catch(function (err) {
                     processed += chunkFiles.length;
                     allFailures.push('Network error on a batch of ' + chunkFiles.length + ' file(s): ' + err);
+                })
+                .finally(function () {
+                    chunksInFlight--;
                     updateProgress();
-                    submitChunk(startIndex + CHUNK_SIZE);
+                    launchNext();
                 });
         }
 
         updateProgress();
-        submitChunk(0);
+        for (var w = 0; w < CONCURRENCY && w < chunks.length; w++) {
+            launchNext();
+        }
     });
 });
 </script>

@@ -5,6 +5,7 @@ from pathlib import Path
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
+from django.db import IntegrityError
 from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -62,9 +63,17 @@ def _process_upload(file, analyzer, source=Candidate.Source.INTERNAL):
         except ResumeAnalysisError as exc:
             return None, str(exc)
 
-    candidate = Candidate.objects.create(
-        resume_file=file, file_hash=file_hash, source=source, **extracted_data
-    )
+    try:
+        candidate = Candidate.objects.create(
+            resume_file=file, file_hash=file_hash, source=source, **extracted_data
+        )
+    except IntegrityError:
+        # Same file finished analyzing in a parallel chunk a moment earlier
+        # and won the race to save first - treat it the same as a duplicate.
+        duplicate = Candidate.objects.filter(file_hash=file_hash).first()
+        name = duplicate.full_name or duplicate.pk if duplicate else "another upload"
+        return None, f"duplicate of already-uploaded '{name}'"
+
     return candidate, None
 
 
